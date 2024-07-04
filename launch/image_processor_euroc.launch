@@ -11,10 +11,13 @@
       output="screen">
 
       <rosparam command="load" file="$(arg calibration_file)"/>
+		<!--画网格，网格的数量-->
       <param name="grid_row" value="4"/>
       <param name="grid_col" value="5"/>
+		<!--网格的特征数量-->
       <param name="grid_min_feature_num" value="3"/>
       <param name="grid_max_feature_num" value="4"/>
+		<!--图像金字塔层数、匹配的参数、fast的阈值、ransac匹配次数 阈值-->
       <param name="pyramid_levels" value="3"/>
       <param name="patch_size" value="15"/>
       <param name="fast_threshold" value="10"/>

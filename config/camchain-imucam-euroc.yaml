@@ -1,17 +1,23 @@
 # The modifications of the output file from Kalibr:
 # 1. For each matrix (e.g. cam0/T_cam_imu), remove the brackets and minus sign for each line. Use one pair of brackets for each matrix.
 # 2. Add the T_imu_body at the end of the calibration file (usually set to identity).
+# 相机内外参
 cam0:
   T_cam_imu:
     [0.014865542981794,   0.999557249008346,  -0.025774436697440,   0.065222909535531,
     -0.999880929698575,   0.014967213324719,   0.003756188357967,  -0.020706385492719,
      0.004140296794224,   0.025715529947966,   0.999660727177902,  -0.008054602460030,
                      0,                   0,                   0,   1.000000000000000]
+  # 投影模型 针孔模型
   camera_model: pinhole
   distortion_coeffs: [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]
+  # 畸变模型 径向 切向
   distortion_model: radtan
+  # K矩阵
   intrinsics: [458.654, 457.296, 367.215, 248.375]
+  # 图片分辨率
   resolution: [752, 480]
+  # 图片和IMU的延时
   timeshift_cam_imu: 0.0
 cam1:
   T_cam_imu:
@@ -30,6 +36,7 @@ cam1:
   intrinsics: [457.587, 456.134, 379.999, 255.238]
   resolution: [752, 480]
   timeshift_cam_imu: 0.0
+  # IMU与body为同一个系
 T_imu_body:
   [1.0000, 0.0000, 0.0000, 0.0000,
   0.0000, 1.0000, 0.0000, 0.0000,
