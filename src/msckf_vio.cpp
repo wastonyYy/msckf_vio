@@ -269,12 +269,14 @@ void MsckfVio::imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   return;
 }
 
+// 整个IMU初始化 就是求Rwg的过程，已知RwI的情况 就可以得到RgI；除此以外就是偏置等其他
 void MsckfVio::initializeGravityAndBias() {
 
   // Initialize gravity and gyro bias.
+  // 1、角速度和加速度求和
   Vector3d sum_angular_vel = Vector3d::Zero();
   Vector3d sum_linear_acc = Vector3d::Zero();
-
+  // 转化的过程
   for (const auto& imu_msg : imu_msg_buffer) {
     Vector3d angular_vel = Vector3d::Zero();
     Vector3d linear_acc = Vector3d::Zero();
@@ -285,17 +287,21 @@ void MsckfVio::initializeGravityAndBias() {
     sum_angular_vel += angular_vel;
     sum_linear_acc += linear_acc;
   }
-
+  // 2. 因为假设静止的，因此陀螺仪理论应该都是0，额外读数包括偏置+噪声，但是噪声属于高斯分布
+  // 因此这一段相加噪声被认为互相抵消了，所以剩下的均值被认为是陀螺仪的初始偏置
   state_server.imu_state.gyro_bias =
     sum_angular_vel / imu_msg_buffer.size();
   //IMUState::gravity =
   //  -sum_linear_acc / imu_msg_buffer.size();
   // This is the gravity in the IMU frame.
+  // 3. 计算重力，忽略加速度计的偏置，剩下的就只有重力了
   Vector3d gravity_imu =
     sum_linear_acc / imu_msg_buffer.size();
 
   // Initialize the initial orientation, so that the estimation
   // is consistent with the inertial frame.
+  // 重力本来的方向
+  // 重力的方向向量 z轴有数，其他为0
   double gravity_norm = gravity_imu.norm();
   IMUState::gravity = Vector3d(0.0, 0.0, -gravity_norm);
 
@@ -401,12 +407,14 @@ void MsckfVio::featureCallback(
 
   // Propogate the IMU state.
   // that are received before the image msg.
+  // IMU积分
   ros::Time start_time = ros::Time::now();
   batchImuProcessing(msg->header.stamp.toSec());
   double imu_processing_time = (
       ros::Time::now()-start_time).toSec();
 
   // Augment the state vector.
+  // 根据imu积分递推出的状态计算相机状态，更新协方差矩阵->状态增广
   start_time = ros::Time::now();
   stateAugmentation(msg->header.stamp.toSec());
   double state_augmentation_time = (
@@ -414,23 +422,27 @@ void MsckfVio::featureCallback(
 
   // Add new observations for existing features or new
   // features in the map server.
+  // 添加新的观测
   start_time = ros::Time::now();
   addFeatureObservations(msg);
   double add_observations_time = (
       ros::Time::now()-start_time).toSec();
 
   // Perform measurement update if necessary.
+  // 使用不跟踪的点来更新
   start_time = ros::Time::now();
   removeLostFeatures();
   double remove_lost_features_time = (
       ros::Time::now()-start_time).toSec();
 
+  // 类似滑窗的情况，去掉前面的帧
   start_time = ros::Time::now();
   pruneCamStateBuffer();
   double prune_cam_states_time = (
       ros::Time::now()-start_time).toSec();
 
   // Publish the odometry.
+  // 
   start_time = ros::Time::now();
   publish(msg->header.stamp);
   double publish_time = (
