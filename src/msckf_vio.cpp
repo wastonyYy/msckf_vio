@@ -203,11 +203,9 @@ bool MsckfVio::createRosIO() {
   imu_sub = nh.subscribe("imu", 100,
       &MsckfVio::imuCallback, this);
   //! 重点！！
-  feature_sub = nh.subscribe("features", 40,
-      &MsckfVio::featureCallback, this);
+  feature_sub = nh.subscribe("features", 40, &MsckfVio::featureCallback, this);
 
-  mocap_odom_sub = nh.subscribe("mocap_odom", 10,
-      &MsckfVio::mocapOdomCallback, this);
+  mocap_odom_sub = nh.subscribe("mocap_odom", 10, &MsckfVio::mocapOdomCallback, this);
   mocap_odom_pub = nh.advertise<nav_msgs::Odometry>("gt_odom", 1);
 
   return true;
@@ -233,6 +231,7 @@ bool MsckfVio::initialize() {
   // Initialize the chi squared test table with confidence
   // level 0.95.
   //卡方检测
+  // MSCKF中，卡方检验可以用于检测外点（outliers）或异常值。
   for (int i = 1; i < 100; ++i) {
     boost::math::chi_squared chi_squared_dist(i);
     chi_squared_test_table[i] =
@@ -287,6 +286,9 @@ void MsckfVio::initializeGravityAndBias() {
     sum_angular_vel += angular_vel;
     sum_linear_acc += linear_acc;
   }
+  for(const auto& imu_msg : imu_msg_buffer){  
+
+  }
   // 2. 因为假设静止的，因此陀螺仪理论应该都是0，额外读数包括偏置+噪声，但是噪声属于高斯分布
   // 因此这一段相加噪声被认为互相抵消了，所以剩下的均值被认为是陀螺仪的初始偏置
   state_server.imu_state.gyro_bias =
@@ -304,7 +306,7 @@ void MsckfVio::initializeGravityAndBias() {
   // 重力的方向向量 z轴有数，其他为0
   double gravity_norm = gravity_imu.norm();
   IMUState::gravity = Vector3d(0.0, 0.0, -gravity_norm);
-
+  // 通过两坐标系的重力向量求两坐标系的旋转
   Quaterniond q0_i_w = Quaterniond::FromTwoVectors(
     gravity_imu, -IMUState::gravity);
   state_server.imu_state.orientation =

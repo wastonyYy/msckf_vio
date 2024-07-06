@@ -36,14 +36,19 @@ struct Feature {
    * @brief OptimizationConfig Configuration parameters
    *    for 3d feature position optimization.
    */
+    // 优化参数量
   struct OptimizationConfig {
-    double translation_threshold;
+    double translation_threshold; // 
+
     double huber_epsilon;
+    // 估计精度
     double estimation_precision;
+    // LM算法的lambda初始值
     double initial_damping;
+    // 内外轮迭代
     int outer_loop_max_iteration;
     int inner_loop_max_iteration;
-
+    // 默认值
     OptimizationConfig():
       translation_threshold(0.2),
       huber_epsilon(0.01),
@@ -54,7 +59,7 @@ struct Feature {
       return;
     }
   };
-
+  // 源代码部分都在hpp内
   // Constructors for the struct.
   Feature(): id(0), position(Eigen::Vector3d::Zero()),
     is_initialized(false) {}
@@ -159,7 +164,7 @@ struct Feature {
 
 };
 
-typedef Feature::FeatureIDType FeatureIDType;
+typedef Feature::FeatureIDType FeatureIDType; 
 typedef std::map<FeatureIDType, Feature, std::less<int>,
         Eigen::aligned_allocator<
         std::pair<const FeatureIDType, Feature> > > MapServer;
