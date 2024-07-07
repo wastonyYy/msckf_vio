@@ -147,6 +147,7 @@ struct Feature {
   // state_id(key)-image_coordinates(value) manner.
   std::map<StateIDType, Eigen::Vector4d, std::less<StateIDType>,
     Eigen::aligned_allocator<
+    // longlong int
       std::pair<const StateIDType, Eigen::Vector4d> > > observations;
 
   // 3d postion of the feature in the world frame.
@@ -234,30 +235,45 @@ void Feature::generateInitialGuess(
     const Eigen::Isometry3d& T_c1_c2, const Eigen::Vector2d& z1,
     const Eigen::Vector2d& z2, Eigen::Vector3d& p) const {
   // Construct a least square problem to solve the depth.
+  // 列出方程
+    // P2 = R21 * P1 + t21  下面省略21
+    // 两边左乘P2的反对称矩阵
+    // P2^ * (R * P1 + t) = 0
+    // 其中左右可以除以P2的深度，这样P2就成了z2，且P1可以分成z1（归一化平面） 乘上我们要求的深度d
+    // 令m = R * z1
+    // | 0   -1   z2y |    ( | m0 |         )
+    // | 1    0  -z2x | *  ( | m1 | * d + t )  =  0
+    // |-z2y z2x   0  |    ( | m2 |         )
+    // 会发现这三行里面两行是线性相关的，所以只取前两行
   Eigen::Vector3d m = T_c1_c2.linear() * Eigen::Vector3d(z1(0), z1(1), 1.0);
-
+  //  Ax = b
+  //  A = | 0   -1   z2y |    | m0 |         
+  //      | 1    0  -z2x | *  | m1 | 
+  //      |-z2y z2x   0  |    | m2 |
   Eigen::Vector2d A(0.0, 0.0);
-  A(0) = m(0) - z2(0)*m(2);
-  A(1) = m(1) - z2(1)*m(2);
-
+  A(0) = m(0) - z2(0)*m(2); //!对应第二行
+  A(1) = m(1) - z2(1)*m(2); //!对应第一行
+  // b
   Eigen::Vector2d b(0.0, 0.0);
-  b(0) = z2(0)*T_c1_c2.translation()(2) - T_c1_c2.translation()(0);
-  b(1) = z2(1)*T_c1_c2.translation()(2) - T_c1_c2.translation()(1);
+  b(0) = z2(0)*T_c1_c2.translation()(2) - T_c1_c2.translation()(0); //!对应第二行
+  b(1) = z2(1)*T_c1_c2.translation()(2) - T_c1_c2.translation()(1); //!对应第一行
 
   // Solve for the depth.
+  // 求x，初始状态下左相机的坐标
   double depth = (A.transpose() * A).inverse() * A.transpose() * b;
   p(0) = z1(0) * depth;
   p(1) = z1(1) * depth;
   p(2) = depth;
   return;
 }
-
+// 判断是否足够三角化
 bool Feature::checkMotion(
     const CamStateServer& cam_states) const {
-
+  // 取出始末相机的id
   const StateIDType& first_cam_id = observations.begin()->first;
   const StateIDType& last_cam_id = (--observations.end())->first;
-
+  // 最终获得Rwc
+  // 都是左相机
   Eigen::Isometry3d first_cam_pose;
   first_cam_pose.linear() = quaternionToRotation(
       cam_states.find(first_cam_id)->second.orientation).transpose();
@@ -269,12 +285,14 @@ bool Feature::checkMotion(
       cam_states.find(last_cam_id)->second.orientation).transpose();
   last_cam_pose.translation() =
     cam_states.find(last_cam_id)->second.position;
-
+  
   // Get the direction of the feature when it is first observed.
   // This direction is represented in the world frame.
+  // 取出射线
   Eigen::Vector3d feature_direction(
       observations.begin()->second(0),
       observations.begin()->second(1), 1.0);
+  // 转到世界坐标
   feature_direction = feature_direction / feature_direction.norm();
   feature_direction = first_cam_pose.linear()*feature_direction;
 
@@ -282,27 +300,35 @@ bool Feature::checkMotion(
   // and the last frame. We assume the first frame and
   // the last frame will provide the largest motion to
   // speed up the checking process.
+  // 求出始末两帧在世界坐标系下的位移
   Eigen::Vector3d translation = last_cam_pose.translation() -
     first_cam_pose.translation();
+
+  // 这里相当于两个向量点乘 这个结果等于夹角的cos值乘上位移的模
+  // 也相当于translation 在 feature_direction上的投影
+  // 其实就是translation在feature_direction方向上的长度
   double parallel_translation =
     translation.transpose()*feature_direction;
-  Eigen::Vector3d orthogonal_translation = translation -
-    parallel_translation*feature_direction;
-
+  // 这块直接理解比较抽象，使用带入法，分别带入 0° 180° 跟90°
+  // 当两个向量的方向相同 0°，这个值是0
+  // 两个方向相反时 180°，这个值也是0
+  // 90°时， cos为0，也就是看translation是否足够大
+  // 所以这块的判断即考虑了角度，同时考虑了位移。即使90°但是位移不够也不做三角化
+  Eigen::Vector3d orthogonal_translation = 
+      translation - parallel_translation * feature_direction;
   if (orthogonal_translation.norm() >
       optimization_config.translation_threshold)
     return true;
   else return false;
 }
-
+// 做三角化
 bool Feature::initializePosition(
     const CamStateServer& cam_states) {
   // Organize camera poses and feature observations properly.
-  std::vector<Eigen::Isometry3d,
-    Eigen::aligned_allocator<Eigen::Isometry3d> > cam_poses(0);
-  std::vector<Eigen::Vector2d,
-    Eigen::aligned_allocator<Eigen::Vector2d> > measurements(0);
-
+  // 6个位姿 对应6个观测
+  std::vector<Eigen::Isometry3d, Eigen::aligned_allocator<Eigen::Isometry3d> > cam_poses(0);
+  std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> > measurements(0);
+  //1.准备数据
   for (auto& m : observations) {
     // TODO: This should be handled properly. Normally, the
     //    required camera states should all be available in
@@ -311,11 +337,13 @@ bool Feature::initializePosition(
     if (cam_state_iter == cam_states.end()) continue;
 
     // Add the measurement.
+    //1.1 添加归一化坐标
     measurements.push_back(m.second.head<2>());
     measurements.push_back(m.second.tail<2>());
 
     // This camera pose will take a vector from this camera frame
     // to the world frame.
+    // Twc
     Eigen::Isometry3d cam0_pose;
     cam0_pose.linear() = quaternionToRotation(
         cam_state_iter->second.orientation).transpose();
@@ -323,7 +351,7 @@ bool Feature::initializePosition(
 
     Eigen::Isometry3d cam1_pose;
     cam1_pose = cam0_pose * CAMState::T_cam0_cam1.inverse();
-
+    // 1.2 添加相机位姿
     cam_poses.push_back(cam0_pose);
     cam_poses.push_back(cam1_pose);
   }
@@ -331,20 +359,28 @@ bool Feature::initializePosition(
   // All camera poses should be modified such that it takes a
   // vector from the first camera frame in the buffer to this
   // camera frame.
+  // 2.中心化位姿，提高计算精度
+  // 都转到c0的相机相对于世界坐标系下，这样就从每个相机对于世界坐标的绝对变为相对于c0的相对坐标  
   Eigen::Isometry3d T_c0_w = cam_poses[0];
   for (auto& pose : cam_poses)
     pose = pose.inverse() * T_c0_w;
 
   // Generate initial guess
+  // 通过始末的位姿来粗略的计算三维点坐标
+
   Eigen::Vector3d initial_position(0.0, 0.0, 0.0);
-  generateInitialGuess(cam_poses[cam_poses.size()-1], measurements[0],
-      measurements[measurements.size()-1], initial_position);
+  // 只放入了末端的相机位姿，因为都相对于c0，所以c0为单位矩阵，不用放入
+  generateInitialGuess(cam_poses[cam_poses.size()-1],   
+      measurements[0], measurements[measurements.size()-1], // 始末相机关于归一化平面的点坐标
+      initial_position);  // 输出三维点
+  // 逆深度的形式，使得数值更稳定
   Eigen::Vector3d solution(
       initial_position(0)/initial_position(2),
       initial_position(1)/initial_position(2),
       1.0/initial_position(2));
 
   // Apply Levenberg-Marquart method to solve for the 3d position.
+  // LM优化
   double lambda = optimization_config.initial_damping;
   int inner_loop_cntr = 0;
   int outer_loop_cntr = 0;
@@ -352,6 +388,7 @@ bool Feature::initializePosition(
   double delta_norm = 0;
 
   // Compute the initial cost.
+  // 4.利用初计算的点计算在各个相机下的误差，作为初始误差
   double total_cost = 0.0;
   for (int i = 0; i < cam_poses.size(); ++i) {
     double this_cost = 0.0;
